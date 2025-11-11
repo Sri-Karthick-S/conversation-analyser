@@ -4,8 +4,9 @@ transformers
 torch
 openai-whisper
 pandas
-python-multipart
 python-dotenv
-moviepy
+moviepy==1.0.3
 opencv-python
 deepface
+keybert
+sentence-transformers
