@@ -1,34 +1,276 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Conversational Emotion Analyzer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conversation Analyzer</title>
   <style>
-    body { font-family: Arial; margin: 40px; }
-    button { margin: 10px; padding: 10px 15px; font-size: 16px; }
-    #status { margin-top: 20px; }
-    #results { margin-top: 30px; border-collapse: collapse; width: 100%; }
-    #results td, #results th { border: 1px solid #ddd; padding: 8px; }
-    #results th { background-color: #f2f2f2; }
+    body { font-family: Arial, sans-serif; background:#f5f5f5; padding:20px; color:#222; }
+    h1 { text-align:center; }
+    #controls { margin:15px 0; text-align:center; }
+    button { padding:10px 18px; margin:5px; border:none; border-radius:8px; cursor:pointer; }
+    #startBtn { background:#4CAF50; color:white; }
+    #stopBtn { background:#E53935; color:white; }
+    #status { margin-top:10px; text-align:center; font-weight:bold; }
+    #preview { display:block; margin:0 auto; border-radius:10px; width:360px; height:auto; }
+    table { border-collapse:collapse; margin-top:20px; width:100%; background:white; }
+    th, td { border:1px solid #ccc; padding:8px; text-align:left; }
+    th { background:#f0f0f0; }
+    #micIndicator { width:250px; height:12px; background:#222; margin:10px auto; border-radius:6px; overflow:hidden; }
+    #micLevel { height:100%; width:0%; background:#333; transition:width 0.1s linear; }
+
+    /* Loader */
+    #loader {
+      display:none;
+      border:6px solid #f3f3f3;
+      border-top:6px solid #4CAF50;
+      border-radius:50%;
+      width:40px;
+      height:40px;
+      animation: spin 1s linear infinite;
+      margin:20px auto;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    /* Replay container */
+    #replayContainer {
+      text-align:center;
+      margin-top:20px;
+    }
+    #replayContainer video {
+      border-radius:10px;
+      width:360px;
+      height:auto;
+      display:block;
+      margin:0 auto;
+    }
+    #closeReplay {
+      background:#e53935;
+      color:white;
+      border:none;
+      border-radius:5px;
+      padding:5px 10px;
+      margin-top:8px;
+      cursor:pointer;
+    }
   </style>
 </head>
 <body>
+  <h1>🎥 Conversation Analyzer</h1>
+  <div id="questionBox" style="text-align:center;font-size:18px;margin-top:10px;"></div>
 
-  <h2>🎙 Conversational Emotion & Sentiment Analyzer</h2>
-  <p>Click <b>Start Recording</b> to record your answer. Click <b>Stop</b> when done.</p>
+  <video id="preview" autoplay muted></video>
 
-  <button id="startBtn">Start Recording</button>
-  <button id="stopBtn" disabled>Stop</button>
+  <div id="micIndicator"><div id="micLevel"></div></div>
+  <div id="controls">
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+  </div>
 
-  <div id="status">Status: Idle</div>
+  <div id="status">Initializing...</div>
+  <div id="loader"></div>
 
   <table id="results">
     <thead>
-      <tr><th>Text</th><th>Sentiment</th><th>Emotion</th></tr>
+      <tr>
+        <th>Question</th>
+        <th>Transcript</th>
+        <th>Sentiment</th>
+        <th>Text Emotion</th>
+        <th>Facial Emotion</th>
+        <th>Topic</th>
+        <th>Duration (s)</th>
+        <th>Replay</th>
+      </tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <script src="script.js"></script>
+  <div id="replayContainer"></div>
+
+  <script>
+    const questions = [
+      "Tell me about yourself.",
+      "What motivates you to perform well?",
+    ];
+    let currentQuestion = 0;
+    let recorder, chunks = [], stream;
+    let audioContext, analyser, source, dataArray;
+    let isRecording = false;
+    let startTime, stopTime;
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusDiv = document.getElementById("status");
+    const video = document.getElementById("preview");
+    const questionBox = document.getElementById("questionBox");
+    const micLevel = document.getElementById("micLevel");
+    const loader = document.getElementById("loader");
+    const replayContainer = document.getElementById("replayContainer");
+
+    // === Initialize camera + mic ===
+    async function init() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 360 },
+          audio: true
+        });
+        video.srcObject = stream;
+        video.play();
+        await initMicAnalyser();
+        displayQuestion();
+        statusDiv.textContent = "🎧 Ready to record video and audio.";
+      } catch (err) {
+        console.error("Permission denied:", err);
+        statusDiv.textContent = "❌ Please allow camera and microphone access.";
+      }
+    }
+    init();
+
+    // === Mic analyser setup ===
+    async function initMicAnalyser() {
+      audioContext = new AudioContext();
+      source = audioContext.createMediaStreamSource(stream);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+    }
+
+    function visualizeMic() {
+      if (!audioContext || !analyser) return;
+      const draw = () => {
+        if (!isRecording) {
+          micLevel.style.width = "0%";
+          micLevel.style.background = "#333";
+          return;
+        }
+        analyser.getByteTimeDomainData(dataArray);
+        const amplitude = Math.max(...dataArray);
+        const loudness = Math.min(100, ((amplitude - 128) / 128) * 100);
+        micLevel.style.width = `${Math.abs(loudness)}%`;
+        micLevel.style.background =
+          amplitude > 145 ? "linear-gradient(90deg,#0f0,#ff0)" : "#333";
+        requestAnimationFrame(draw);
+      };
+      draw();
+    }
+
+    // === Display current question ===
+    function displayQuestion() {
+      if (currentQuestion >= questions.length) {
+        questionBox.textContent = "🎉 All questions completed!";
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        statusDiv.textContent = "Interview finished.";
+        return;
+      }
+      questionBox.textContent = `Question ${currentQuestion + 1}: ${questions[currentQuestion]}`;
+    }
+
+    // === Start recording ===
+    startBtn.onclick = () => {
+      chunks = [];
+      recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = onStop;
+      recorder.start();
+      isRecording = true;
+      startTime = Date.now();
+      visualizeMic();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      loader.style.display = "none";
+      statusDiv.textContent = "🔴 Recording... speak now!";
+    };
+
+    // === Stop recording ===
+    stopBtn.onclick = () => {
+      if (!recorder) return;
+      isRecording = false;
+      stopTime = Date.now();
+      recorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      loader.style.display = "block";
+      statusDiv.textContent = "⏳ Processing...";
+    };
+
+    // === When recording stops ===
+    async function onStop() {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const durationSec = ((stopTime - startTime) / 1000).toFixed(1);
+
+      const formData = new FormData();
+      formData.append("file", blob, "video.webm");
+      formData.append("question", questions[currentQuestion]);
+
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/analyze_video/", {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        displayResult(data, blob, durationSec);
+
+        loader.style.display = "none";
+        currentQuestion++;
+        if (currentQuestion < questions.length) {
+          statusDiv.textContent = "✅ Analysis complete. Next question ready.";
+          displayQuestion();
+        } else {
+          statusDiv.textContent = "✅ All questions analyzed.";
+        }
+      } catch (err) {
+        console.error("Upload failed:", err);
+        loader.style.display = "none";
+        statusDiv.textContent = "❌ Upload or analysis failed.";
+      }
+    }
+
+    // === Display result in table with replay ===
+    function displayResult(data, blob, durationSec) {
+      const tbody = document.querySelector("#results tbody");
+      const tr = document.createElement("tr");
+      const videoURL = URL.createObjectURL(blob);
+
+      tr.innerHTML = `
+        <td>${data.question}</td>
+        <td>${data.transcript || "No transcript"}</td>
+        <td>${data.sentiment || "-"}</td>
+        <td>${data.text_emotion || "-"}</td>
+        <td>${data.facial_emotion || "-"}</td>
+        <td>${data.topic || "N/A"}</td>
+        <td>${durationSec}</td>
+      `;
+
+      const replayCell = document.createElement("td");
+      const replayBtn = document.createElement("button");
+      replayBtn.textContent = "▶ Replay";
+      replayBtn.style.padding = "4px 10px";
+      replayBtn.onclick = () => showReplay(videoURL);
+      replayCell.appendChild(replayBtn);
+      tr.appendChild(replayCell);
+      tbody.appendChild(tr);
+    }
+
+    // === Replay handler ===
+    function showReplay(url) {
+      replayContainer.innerHTML = ""; // clear old video if exists
+
+      const vid = document.createElement("video");
+      vid.src = url;
+      vid.controls = true;
+      vid.autoplay = true;
+
+      const closeBtn = document.createElement("button");
+      closeBtn.id = "closeReplay";
+      closeBtn.textContent = "❌ Close Replay";
+      closeBtn.onclick = () => replayContainer.innerHTML = "";
+
+      replayContainer.appendChild(vid);
+      replayContainer.appendChild(closeBtn);
+    }
+  </script>
 </body>
 </html>

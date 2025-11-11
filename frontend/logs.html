@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Backend Logs Viewer</title>
+  <style>
+    body { font-family: monospace; background-color: #111; color: #0f0; padding: 20px; }
+    h2 { color: #fff; }
+    #logContainer {
+      background-color: #000;
+      border: 1px solid #444;
+      height: 600px;
+      overflow-y: scroll;
+      padding: 10px;
+      white-space: pre-line;
+    }
+    #refreshRate { margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h2>📜 Live Backend Logs</h2>
+  <label for="refreshRate">Auto-refresh every: </label>
+  <select id="refreshRate">
+    <option value="2">2 seconds</option>
+    <option value="5" selected>5 seconds</option>
+    <option value="10">10 seconds</option>
+  </select>
+  <button id="refreshBtn">Refresh Now</button>
+  <div id="logContainer"></div>
+
+  <script>
+    const logContainer = document.getElementById("logContainer");
+    const refreshRateSelect = document.getElementById("refreshRate");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    async function fetchLogs() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/logs/?lines=100");
+        const data = await res.json();
+        logContainer.textContent = data.logs.join("");
+        logContainer.scrollTop = logContainer.scrollHeight;
+      } catch (err) {
+        logContainer.textContent = "Error fetching logs: " + err;
+      }
+    }
+
+    let interval = setInterval(fetchLogs, 5000);
+    refreshBtn.onclick = fetchLogs;
+    refreshRateSelect.onchange = () => {
+      clearInterval(interval);
+      interval = setInterval(fetchLogs, refreshRateSelect.value * 1000);
+    };
+
+    fetchLogs(); // initial load
+  </script>
+</body>
+</html>

@@ -1,7 +1,35 @@
-# Python cache and virtual environments
+# ===== Python cache and build files =====
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+
+# ===== Virtual environment =====
 venv/
-.env/
+.env
+.venv/
+env/
+ENV/
+
+# ===== Logs and runtime files =====
+logs/
+*.log
+*.tmp
+*.pid
+
+# ===== CSV output files =====
+conversation_log.csv
+video_session_log.csv
+
+# ===== Frontend build / cache =====
+*.map
+*.lock
+node_modules/
+dist/
+build/
+
+# ===== Editor / OS files =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

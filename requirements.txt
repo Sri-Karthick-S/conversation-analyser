@@ -5,3 +5,7 @@ torch
 openai-whisper
 pandas
 python-multipart
+python-dotenv
+moviepy
+opencv-python
+deepface
